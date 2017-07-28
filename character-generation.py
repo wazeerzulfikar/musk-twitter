@@ -10,23 +10,27 @@ import torch.nn as nn
 from torch.autograd import Variable
 import argparse
 import time,math
+import sys  
+
+reload(sys)  
+sys.setdefaultencoding('utf8')
 
 # Helpers for creating training data
-def random_chunk(file, chunk_len):
+def random_chunk():
     start_index = random.randint(0, len(file) - chunk_len)
     end_index = start_index + chunk_len + 1
     return file[start_index:end_index]
 
-def char_tensor(string, all_characters):
+def char_tensor(string):
     tensor = torch.zeros(len(string)).long()
     for c in range(len(string)):
         tensor[c] = all_characters.index(string[c])
     return Variable(tensor)
 
-def random_training_set(file, chunk_len, all_characters):    
-    chunk = random_chunk(file, chunk_len)
-    inp = char_tensor(chunk[:-1], all_characters)
-    target = char_tensor(chunk[1:], all_characters)
+def random_training_set():    
+    chunk = random_chunk()
+    inp = char_tensor(chunk[:-1])
+    target = char_tensor(chunk[1:])
     return inp, target
 
 # The neural network model 
@@ -52,9 +56,9 @@ class RNN(nn.Module):
     def init_hidden(self):
         return Variable(torch.zeros(self.n_layers, 1, self.hidden_size))
 
-def evaluate(decoder, all_characters, prime_str='A', predict_len=100, temperature=0.8):
+def evaluate(prime_str='A', predict_len=60, temperature=0.8):
     hidden = decoder.init_hidden()
-    prime_input = char_tensor(prime_str, all_characters)
+    prime_input = char_tensor(prime_str)
     predicted = prime_str
 
     # Use priming string to "build up" hidden state
@@ -72,7 +76,7 @@ def evaluate(decoder, all_characters, prime_str='A', predict_len=100, temperatur
         # Add predicted character to string and use as next input
         predicted_char = all_characters[top_i]
         predicted += predicted_char
-        inp = char_tensor(predicted_char, all_characters)
+        inp = char_tensor(predicted_char)
 
     return predicted
 
@@ -82,7 +86,7 @@ def time_since(since):
     s -= m * 60
     return '%dm %ds' % (m, s)
 
-def train(decoder, criterion, decoder_optimizer, chunk_len, inp, target):
+def train(inp, target):
     hidden = decoder.init_hidden()
     decoder.zero_grad()
     loss = 0
@@ -96,45 +100,6 @@ def train(decoder, criterion, decoder_optimizer, chunk_len, inp, target):
 
     return loss.data[0] / chunk_len
 
-def train_net(args):
-    all_characters = string.printable
-    n_characters = len(all_characters)
-
-    file = unidecode.unidecode(open(args.filename).read())
-    file_len = len(file)
-    print('file length = %d' %file_len)
-
-    n_epochs = args.n_epochs
-    print_every = args.print_every
-    plot_every = 10
-    hidden_size = args.hidden_size
-    n_layers = args.n_layers
-    lr = args.learning_rate
-    chunk_len = args.chunk_len
-
-    decoder = RNN(n_characters, hidden_size, n_characters, n_layers)
-    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
-
-    start = time.time()
-    all_losses = []
-    loss_avg = 0
-
-    for epoch in range(1, n_epochs + 1):
-        loss = train(decoder, criterion, decoder_optimizer, chunk_len, *random_training_set(file, chunk_len, all_characters))       
-        loss_avg += loss
-
-        if epoch % print_every == 0:
-            print('[%s (%d %d%%) %.4f]' % (time_since(start), epoch, float(epoch) / n_epochs * 100, loss))
-            print("%s \n"%evaluate(decoder,all_characters, 'Wh', 100))
-
-        if epoch % plot_every == 0:
-            all_losses.append(loss_avg / plot_every)
-            loss_avg = 0
-
-
-    plt.figure()
-    plt.plot(all_losses)
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument('filename', type=str)
@@ -146,8 +111,44 @@ argparser.add_argument('--learning_rate', type=float, default=0.01)
 argparser.add_argument('--chunk_len', type=int, default=200)
 args = argparser.parse_args()
 
-train_net(args)
+file = unidecode.unidecode(open(args.filename).read())
+file_len = len(file)
+print('file length = %d' %file_len)
 
+all_characters = string.printable
+n_characters = len(all_characters)
+
+n_epochs = args.n_epochs
+print_every = args.print_every
+plot_every = 10
+hidden_size = args.hidden_size
+n_layers = args.n_layers
+lr = args.learning_rate
+chunk_len = args.chunk_len
+
+decoder = RNN(n_characters, hidden_size, n_characters, n_layers)
+decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=lr)
+criterion = nn.CrossEntropyLoss()
+
+start = time.time()
+all_losses = []
+loss_avg = 0
+
+for epoch in range(1, n_epochs + 1):
+    loss = train(*random_training_set())       
+    loss_avg += loss
+
+    if epoch % print_every == 0:
+        print('[%s (%d %d%%) %.4f]' % (time_since(start), epoch, float(epoch) / n_epochs * 100, loss))
+        print("%s \n"%evaluate('I ', 100))
+
+    if epoch % plot_every == 0:
+        all_losses.append(loss_avg / plot_every)
+        loss_avg = 0
+
+
+plt.figure()
+plt.plot(all_losses)
 
 
 
